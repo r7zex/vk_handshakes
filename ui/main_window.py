@@ -57,7 +57,6 @@ class MainWindow(QWidget):
         self.search_worker = None
         self.search_thread = None
         self.last_result = None
-        self.token_ok = False
 
         self._build_ui()
         self._render_empty_result()
@@ -147,19 +146,19 @@ class MainWindow(QWidget):
         self.profile_batch_size.setRange(1, 1000)
         self.profile_batch_size.setValue(self.settings.profile_batch_size)
 
-        self.forbid_direct = QCheckBox("Не считать прямую дружбу готовым ответом")
+        self.forbid_direct = QCheckBox("Не учитывать прямую дружбу")
         self.forbid_direct.setChecked(self.settings.forbid_direct_connection)
         self.use_cache = QCheckBox("Использовать кэш")
         self.use_cache.setChecked(self.settings.use_cache)
 
-        form.addRow("Первый пользователь", self.user1)
-        form.addRow("Второй пользователь", self.user2)
-        form.addRow("Не учитывать профили", self.ignored_profiles)
-        form.addRow("Максимальная длина пути", self.max_depth)
-        form.addRow("Друзей на шаг поиска", self.max_friends)
-        form.addRow("Друзей у стартовых профилей", self.max_root)
-        form.addRow("Пауза между VK-запросами", self.api_delay)
-        form.addRow("Размер проверки профилей", self.profile_batch_size)
+        form.addRow("Начальный пользователь", self.user1)
+        form.addRow("Конечный пользователь", self.user2)
+        form.addRow("Не учитывать в рукопожатиях", self.ignored_profiles)
+        form.addRow("Макс кол-во рукопожатий", self.max_depth)
+        form.addRow("Макс кол-во друзей у пользователя", self.max_friends)
+        # form.addRow("Друзей у стартовых профилей", self.max_root) <- Удалить и сделай так, чтобы на начальном и конечном пользователях не учитывалиись ограничения
+        # form.addRow("Пауза между VK-запросами", self.api_delay) <- Убрать возможгость меня
+        # form.addRow("Размер проверки профилей", self.profile_batch_size) <- Это вообще к чему? Мы учитываем только по кол-ву друзей проверяем или нет, и всё, не надо химичить.
         form.addRow(self.forbid_direct)
         form.addRow(self.use_cache)
         return search
@@ -268,28 +267,21 @@ class MainWindow(QWidget):
         self.manual_provider.set_token(token)
         self.token_manager.save_token(token)
         self.token_input.clear()
+        self.btn_start.setEnabled(True)
         self.auth_label.setText(f"Токен сохранён: {mask_token(token)}.")
         self.log("auth", f"токен сохранён: {mask_token(token)}")
-
-    def on_auth_finished(self, ok: bool, message: str) -> None:
-        self.token_ok = ok
-        self.btn_start.setEnabled(ok)
-        self.auth_label.setText(message)
-        self.log("success" if ok else "warning", message)
 
     def on_reset_token(self) -> None:
         self.manual_provider.set_token("")
         self.token_manager.delete_token()
-        self.token_ok = False
         self.btn_start.setEnabled(False)
         self.auth_label.setText("Токен сброшен")
         self.log("auth", "токен удалён")
 
     def on_start(self) -> None:
         settings = self._settings_from_ui()
+        self.btn_start.setEnabled(False)
         errors = validate_search_form(self.user1.text(), self.user2.text(), settings)
-        if not self.token_ok:
-            errors.append("Сначала проверьте рабочий токен")
         if errors:
             self.result.setPlainText("; ".join(errors))
             self.log("warning", "; ".join(errors))
@@ -335,7 +327,7 @@ class MainWindow(QWidget):
 
     def on_failed(self, error: str) -> None:
         self.client.logger = lambda *_: None
-        self.btn_start.setEnabled(self.token_ok)
+        self.btn_start.setEnabled(False)
         self.btn_stop.setEnabled(False)
         self.result.setPlainText(f"Ошибка: {error}")
         self.log("error", error)
@@ -343,7 +335,6 @@ class MainWindow(QWidget):
     def on_finished(self, result) -> None:
         self.client.logger = lambda *_: None
         self.last_result = result
-        self.btn_start.setEnabled(self.token_ok)
         self.btn_stop.setEnabled(False)
 
         if result.found:
