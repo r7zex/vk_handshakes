@@ -1,3 +1,5 @@
+from datetime import datetime
+from html import escape
 from pathlib import Path
 
 from PySide6.QtCore import QThread
@@ -7,6 +9,7 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
+    QGridLayout,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -14,7 +17,6 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSpinBox,
     QTextBrowser,
-    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -30,23 +32,32 @@ from utils.validation import validate_search_form
 from vk.api_client import VkApiClient
 from vk.friends_service import FriendsService
 from vk.token_manager import TokenManager
-from vk.token_provider import ManualTokenProvider, extract_token
+from vk.token_provider import (
+    BarkovTokenProvider,
+    CompositeTokenProvider,
+    ManualTokenProvider,
+    extract_token,
+)
 
 
 class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("VK Handshakes")
-        self.resize(1100, 780)
+        self.resize(1180, 820)
 
         self.settings_store = SettingsStore()
         self.settings = self.settings_store.load_settings()
         self.token_store = TokenStore()
         self.cache_store = CacheStore()
         self.manual_provider = ManualTokenProvider()
+        self.browser_provider = BarkovTokenProvider(logger_callback=self._provider_log)
+        self.token_provider = CompositeTokenProvider(
+            [self.manual_provider, self.browser_provider]
+        )
         self.token_manager = TokenManager(
             self.token_store,
-            self.manual_provider,
+            self.token_provider,
             self._validate_token,
         )
         self.client = VkApiClient(self.token_manager)
@@ -60,11 +71,15 @@ class MainWindow(QWidget):
         self.token_ok = False
 
         self._build_ui()
+        self._render_empty_result()
+        self.log("info", "Готово к работе. Проверьте токен или запустите автоматическое получение.")
         if self.token_manager.has_token():
             self.check_token_async()
 
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(14, 12, 14, 14)
+        layout.setSpacing(10)
 
         title = QLabel("VK Handshakes")
         title.setObjectName("Title")
@@ -73,38 +88,67 @@ class MainWindow(QWidget):
         layout.addWidget(title)
         layout.addWidget(subtitle)
 
+        workspace = QGridLayout()
+        workspace.setColumnStretch(0, 3)
+        workspace.setColumnStretch(1, 2)
+        workspace.setHorizontalSpacing(12)
+        workspace.setVerticalSpacing(10)
+
+        left_column = QVBoxLayout()
+        left_column.setSpacing(10)
+        left_column.addWidget(self._build_auth_box())
+        left_column.addWidget(self._build_search_box())
+        left_column.addLayout(self._build_action_buttons())
+        left_column.addStretch(1)
+
+        workspace.addLayout(left_column, 0, 0)
+        workspace.addWidget(self._build_log_box(), 0, 1)
+        layout.addLayout(workspace, stretch=4)
+
+        layout.addWidget(self._build_result_box(), stretch=2)
+
+    def _build_auth_box(self) -> QGroupBox:
         auth = QGroupBox("Авторизация")
         auth_form = QFormLayout(auth)
+        auth_form.setLabelAlignment(auth_form.labelAlignment())
+
         self.auth_label = QLabel("Токен не найден")
+        self.auth_label.setObjectName("AuthStatus")
         self.token_input = QLineEdit()
         self.token_input.setPlaceholderText("Вставьте access_token или ссылку с access_token=...")
         self.token_input.setEchoMode(QLineEdit.Password)
 
+        self.btn_auto_token = QPushButton("Получить токен автоматически")
         self.btn_save_token = QPushButton("Вставить токен вручную")
         self.btn_check_token = QPushButton("Проверить токен")
         self.btn_reset_token = QPushButton("Сбросить токен")
+
+        self.btn_auto_token.clicked.connect(self.check_token_async)
         self.btn_save_token.clicked.connect(self.on_save_token)
         self.btn_check_token.clicked.connect(self.check_token_async)
         self.btn_reset_token.clicked.connect(self.on_reset_token)
 
-        auth_buttons = QHBoxLayout()
-        auth_buttons.addWidget(self.btn_save_token)
-        auth_buttons.addWidget(self.btn_check_token)
-        auth_buttons.addWidget(self.btn_reset_token)
+        auth_buttons = QGridLayout()
+        auth_buttons.addWidget(self.btn_auto_token, 0, 0, 1, 2)
+        auth_buttons.addWidget(self.btn_save_token, 1, 0)
+        auth_buttons.addWidget(self.btn_check_token, 1, 1)
+        auth_buttons.addWidget(self.btn_reset_token, 2, 0, 1, 2)
+
         auth_form.addRow("Статус", self.auth_label)
         auth_form.addRow("Токен", self.token_input)
         auth_form.addRow(auth_buttons)
-        layout.addWidget(auth)
+        return auth
 
+    def _build_search_box(self) -> QGroupBox:
         search = QGroupBox("Поиск")
-        search_form = QFormLayout(search)
+        form = QFormLayout(search)
+
         self.user1 = QLineEdit()
-        self.user1.setPlaceholderText("https://vk.com/r7zex, r7zex, id123 или 123")
+        self.user1.setPlaceholderText("r7zex, id123, 123 или https://vk.com/r7zex")
         self.user2 = QLineEdit()
-        self.user2.setPlaceholderText("https://vk.com/durov, durov, id1 или 1")
-        self.blacklist = QTextEdit()
-        self.blacklist.setPlaceholderText("Чёрный список, один пользователь на строку")
-        self.blacklist.setFixedHeight(80)
+        self.user2.setPlaceholderText("durov, id1, 1 или https://vk.com/durov")
+        self.ignored_profiles = QLineEdit()
+        self.ignored_profiles.setPlaceholderText("id123, r7zex, https://vk.com/name")
 
         self.max_depth = QSpinBox()
         self.max_depth.setRange(1, 30)
@@ -123,29 +167,24 @@ class MainWindow(QWidget):
         self.profile_batch_size.setRange(1, 1000)
         self.profile_batch_size.setValue(self.settings.profile_batch_size)
 
-        self.forbid_direct = QCheckBox("Запретить прямое соединение")
+        self.forbid_direct = QCheckBox("Не считать прямую дружбу готовым ответом")
         self.forbid_direct.setChecked(self.settings.forbid_direct_connection)
-        self.filter_closed = QCheckBox("Фильтровать закрытые профили")
-        self.filter_closed.setChecked(self.settings.filter_closed_profiles)
-        self.exclude_hubs = QCheckBox("Исключать хабы")
-        self.exclude_hubs.setChecked(self.settings.exclude_hubs)
         self.use_cache = QCheckBox("Использовать кэш")
         self.use_cache.setChecked(self.settings.use_cache)
 
-        search_form.addRow("Первый пользователь", self.user1)
-        search_form.addRow("Второй пользователь", self.user2)
-        search_form.addRow("Blacklist", self.blacklist)
-        search_form.addRow("MAX_DEPTH", self.max_depth)
-        search_form.addRow("MAX_FRIENDS_PER_USER", self.max_friends)
-        search_form.addRow("MAX_ROOT_FRIENDS", self.max_root)
-        search_form.addRow("API_DELAY", self.api_delay)
-        search_form.addRow("PROFILE_BATCH_SIZE", self.profile_batch_size)
-        search_form.addRow(self.forbid_direct)
-        search_form.addRow(self.filter_closed)
-        search_form.addRow(self.exclude_hubs)
-        search_form.addRow(self.use_cache)
-        layout.addWidget(search)
+        form.addRow("Первый пользователь", self.user1)
+        form.addRow("Второй пользователь", self.user2)
+        form.addRow("Не учитывать профили", self.ignored_profiles)
+        form.addRow("Максимальная длина пути", self.max_depth)
+        form.addRow("Друзей на шаг поиска", self.max_friends)
+        form.addRow("Друзей у стартовых профилей", self.max_root)
+        form.addRow("Пауза между VK-запросами", self.api_delay)
+        form.addRow("Размер проверки профилей", self.profile_batch_size)
+        form.addRow(self.forbid_direct)
+        form.addRow(self.use_cache)
+        return search
 
+    def _build_action_buttons(self) -> QHBoxLayout:
         buttons = QHBoxLayout()
         self.btn_start = QPushButton("Найти цепочку")
         self.btn_stop = QPushButton("Остановить")
@@ -158,13 +197,24 @@ class MainWindow(QWidget):
         buttons.addWidget(self.btn_start)
         buttons.addWidget(self.btn_stop)
         buttons.addWidget(self.btn_clear_cache)
-        layout.addLayout(buttons)
+        return buttons
 
+    def _build_log_box(self) -> QGroupBox:
+        log_box = QGroupBox("Журнал действий")
+        log_layout = QVBoxLayout(log_box)
+        self.logs = QTextBrowser()
+        self.logs.setObjectName("LogPanel")
+        self.logs.setOpenExternalLinks(False)
+        log_layout.addWidget(self.logs)
+        return log_box
+
+    def _build_result_box(self) -> QGroupBox:
         result_box = QGroupBox("Результат")
         result_layout = QVBoxLayout(result_box)
         self.result = QTextBrowser()
+        self.result.setObjectName("ResultPanel")
         self.result.setOpenExternalLinks(True)
-        self.result.setMinimumHeight(120)
+        self.result.setMinimumHeight(170)
         result_layout.addWidget(self.result)
 
         result_buttons = QHBoxLayout()
@@ -178,17 +228,33 @@ class MainWindow(QWidget):
         result_buttons.addWidget(self.btn_save_txt)
         result_buttons.addWidget(self.btn_save_json)
         result_layout.addLayout(result_buttons)
-        layout.addWidget(result_box)
+        return result_box
 
-        log_box = QGroupBox("Лог")
-        log_layout = QVBoxLayout(log_box)
-        self.logs = QTextEdit()
-        self.logs.setReadOnly(True)
-        log_layout.addWidget(self.logs)
-        layout.addWidget(log_box)
+    def _provider_log(self, level: str, message: str) -> None:
+        if hasattr(self, "logs"):
+            self.log(level, message)
 
     def log(self, level: str, message: str) -> None:
-        self.logs.append(f"[{level}] {message}")
+        colors = {
+            "auth": "#60a5fa",
+            "cache": "#a78bfa",
+            "error": "#f87171",
+            "info": "#d1d5db",
+            "result": "#34d399",
+            "search": "#93c5fd",
+            "success": "#34d399",
+            "warning": "#fbbf24",
+        }
+        color = colors.get(level, "#d1d5db")
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        self.logs.append(
+            "<div class='log-line'>"
+            f"<span style='color:#64748b'>{timestamp}</span> "
+            f"<span style='color:{color}; font-weight:700'>[{escape(level)}]</span> "
+            f"<span style='color:#e5e7eb'>{escape(message)}</span>"
+            "</div>"
+        )
+        self.logs.verticalScrollBar().setValue(self.logs.verticalScrollBar().maximum())
 
     def _validate_token(self, token: str) -> bool:
         class StaticTokenManager:
@@ -217,15 +283,29 @@ class MainWindow(QWidget):
             api_delay=self.api_delay.value(),
             profile_batch_size=self.profile_batch_size.value(),
             forbid_direct_connection=self.forbid_direct.isChecked(),
-            filter_closed_profiles=self.filter_closed.isChecked(),
-            exclude_hubs=self.exclude_hubs.isChecked(),
+            filter_closed_profiles=True,
+            exclude_hubs=True,
             use_cache=self.use_cache.isChecked(),
+        )
+
+    def _render_empty_result(self) -> None:
+        self.result.setHtml(
+            """
+            <div style="color:#e5e7eb">
+              <h2 style="margin:0 0 8px 0">Результат появится здесь</h2>
+              <p style="margin:0; color:#94a3b8">
+                После запуска поиска здесь будет длина цепочки, кликабельные ссылки
+                и строка пути для копирования.
+              </p>
+            </div>
+            """
         )
 
     def on_save_token(self) -> None:
         token = extract_token(self.token_input.text())
         if not token:
             self.auth_label.setText("Не удалось извлечь access_token")
+            self.log("warning", "Вставьте чистый токен или ссылку, где есть access_token=...")
             return
 
         self.manual_provider.set_token(token)
@@ -239,9 +319,12 @@ class MainWindow(QWidget):
         if self.auth_thread and self.auth_thread.isRunning():
             return
 
+        self.browser_provider.set_preferred_vk_profile(self.user1.text())
         self.auth_label.setText("Проверяем токен...")
         self.btn_check_token.setEnabled(False)
+        self.btn_auto_token.setEnabled(False)
         self.btn_start.setEnabled(False)
+        self.log("auth", "проверяем сохранённый токен или пробуем автоматическое получение")
 
         self.auth_thread = QThread(self)
         self.auth_worker = AuthWorker(self.token_manager)
@@ -257,9 +340,10 @@ class MainWindow(QWidget):
     def on_auth_finished(self, ok: bool, message: str) -> None:
         self.token_ok = ok
         self.btn_check_token.setEnabled(True)
+        self.btn_auto_token.setEnabled(True)
         self.btn_start.setEnabled(ok)
         self.auth_label.setText(message)
-        self.log("auth", message)
+        self.log("success" if ok else "warning", message)
 
     def on_reset_token(self) -> None:
         self.manual_provider.set_token("")
@@ -276,6 +360,7 @@ class MainWindow(QWidget):
             errors.append("Сначала проверьте рабочий токен")
         if errors:
             self.result.setPlainText("; ".join(errors))
+            self.log("warning", "; ".join(errors))
             return
 
         self.settings_store.save_settings(settings)
@@ -283,7 +368,8 @@ class MainWindow(QWidget):
         self.client.requests_count = 0
         self.friends_service.filtered_profiles_count = 0
         self.friends_service.hubs_count = 0
-        self.result.setPlainText("Поиск запущен...")
+        self.result.setHtml("<b>Поиск запущен...</b>")
+        self.log("search", "запускаем двунаправленный BFS")
 
         self.search_thread = QThread(self)
         self.search_worker = SearchWorker(
@@ -292,7 +378,7 @@ class MainWindow(QWidget):
             self.user1.text(),
             self.user2.text(),
             settings,
-            self.blacklist.toPlainText(),
+            self.ignored_profiles.text(),
             self.cache_store,
         )
         self.search_worker.moveToThread(self.search_thread)
@@ -329,23 +415,62 @@ class MainWindow(QWidget):
         self.btn_stop.setEnabled(False)
 
         if result.found:
-            links = "<br>".join(
-                f'<a href="{url}">{url}</a>' for url in result.path_urls
-            )
-            chain = " → ".join(
-                f'<a href="{url}">id{uid}</a>'
-                for uid, url in zip(result.path, result.path_urls, strict=True)
-            )
-            self.result.setHtml(
-                f"<b>{result.message}</b><br><br>{links}<br><br>{chain}"
-            )
+            self._render_found_result(result)
             self.log("result", result.message)
         else:
-            self.result.setPlainText(
-                f"{result.message}\n"
-                f"VK-запросов: {result.vk_requests_count}, "
-                f"обработано пользователей: {result.processed_users}"
+            self._render_not_found_result(result)
+            self.log("warning", result.message)
+
+    def _render_found_result(self, result) -> None:
+        links = "".join(
+            (
+                "<li style='margin:4px 0'>"
+                f"<a href='{escape(url)}' style='color:#60a5fa'>{escape(url)}</a>"
+                "</li>"
             )
+            for url in result.path_urls
+        )
+        chain = " → ".join(
+            f"<a href='{escape(url)}' style='color:#93c5fd'>id{uid}</a>"
+            for uid, url in zip(result.path, result.path_urls, strict=True)
+        )
+        self.result.setHtml(
+            f"""
+            <div style="color:#e5e7eb">
+              <div style="font-size:18px; font-weight:800; color:#34d399">
+                {escape(result.message)}
+              </div>
+              <div style="margin-top:8px; color:#94a3b8">
+                Обработано: {result.processed_users} профилей ·
+                VK-запросов: {result.vk_requests_count} ·
+                Время: {result.elapsed_seconds:.1f} сек.
+              </div>
+              <ol style="margin-top:12px; padding-left:22px">{links}</ol>
+              <div style="margin-top:12px; padding:10px; border:1px solid #334155;
+                          border-radius:8px; background:#0f172a">
+                {chain}
+              </div>
+            </div>
+            """
+        )
+
+    def _render_not_found_result(self, result) -> None:
+        self.result.setHtml(
+            f"""
+            <div style="color:#e5e7eb">
+              <div style="font-size:18px; font-weight:800; color:#fbbf24">
+                {escape(result.message)}
+              </div>
+              <p style="color:#94a3b8">
+                Попробуйте увеличить максимальную длину пути или лимит друзей на шаг.
+              </p>
+              <p style="color:#94a3b8">
+                VK-запросов: {result.vk_requests_count},
+                обработано профилей: {result.processed_users}
+              </p>
+            </div>
+            """
+        )
 
     def on_copy_path(self) -> None:
         if self.last_result and self.last_result.path:

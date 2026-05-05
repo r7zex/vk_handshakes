@@ -30,6 +30,9 @@ class TokenManager:
             return token
 
         self.delete_token()
+        discard_token = getattr(self.token_provider, "discard_token", None)
+        if discard_token:
+            discard_token(token)
         new_token = self.token_provider.get_token()
         if not new_token or new_token == token or not self.validate_token(new_token):
             raise TokenRequiredError(5, "Нужна повторная авторизация")
@@ -56,4 +59,4 @@ class TokenManager:
         self.token_store.delete_token()
 
     def has_token(self) -> bool:
-        return bool(self._token or self.token_store.load_token() or self.token_provider.get_token())
+        return bool(self._token or self.token_store.load_token())

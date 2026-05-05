@@ -1,9 +1,82 @@
-QWidget { background: #111827; color: #e5e7eb; font-size: 13px; }
-QLabel#Title { font-size: 28px; font-weight: 800; color: #f9fafb; }
-QLabel#Subtitle { color: #93c5fd; padding-bottom: 8px; }
-QLineEdit, QTextEdit, QTextBrowser, QSpinBox, QDoubleSpinBox { background: #1f2937; border: 1px solid #374151; border-radius: 8px; padding: 6px; }
-QPushButton { background: #2563eb; border: none; border-radius: 8px; padding: 8px 12px; color: white; font-weight: 600; }
-QPushButton:disabled { background: #374151; color: #9ca3af; }
-QCheckBox { padding: 4px; }
-QGroupBox { border: 1px solid #374151; border-radius: 12px; margin-top: 12px; padding: 8px; }
-QGroupBox::title { subcontrol-origin: margin; left: 8px; padding: 0 4px; }
+QWidget {
+  background: #0f172a;
+  color: #e5e7eb;
+  font-size: 13px;
+}
+
+QLabel#Title {
+  font-size: 30px;
+  font-weight: 800;
+  color: #f8fafc;
+}
+
+QLabel#Subtitle {
+  color: #93c5fd;
+  padding-bottom: 6px;
+}
+
+QLabel#AuthStatus {
+  color: #bfdbfe;
+  font-weight: 700;
+}
+
+QLineEdit,
+QTextBrowser,
+QSpinBox,
+QDoubleSpinBox {
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 7px;
+  selection-background-color: #2563eb;
+}
+
+QTextBrowser#LogPanel {
+  background: #0b1220;
+  border-color: #1e40af;
+  min-width: 360px;
+}
+
+QTextBrowser#ResultPanel {
+  background: #111827;
+  border-color: #2563eb;
+  padding: 12px;
+}
+
+QPushButton {
+  background: #2563eb;
+  border: none;
+  border-radius: 8px;
+  padding: 9px 12px;
+  color: white;
+  font-weight: 700;
+}
+
+QPushButton:hover {
+  background: #1d4ed8;
+}
+
+QPushButton:disabled {
+  background: #334155;
+  color: #94a3b8;
+}
+
+QCheckBox {
+  padding: 4px;
+  color: #dbeafe;
+}
+
+QGroupBox {
+  border: 1px solid #334155;
+  border-radius: 12px;
+  margin-top: 12px;
+  padding: 10px;
+  font-weight: 700;
+}
+
+QGroupBox::title {
+  subcontrol-origin: margin;
+  left: 10px;
+  padding: 0 6px;
+  color: #f8fafc;
+}

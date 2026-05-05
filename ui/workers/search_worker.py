@@ -18,7 +18,7 @@ class SearchWorker(QObject):
         start_value: str,
         end_value: str,
         settings,
-        blacklist_raw: str,
+        ignored_profiles_raw: str,
         cache_store=None,
     ):
         super().__init__()
@@ -26,8 +26,8 @@ class SearchWorker(QObject):
         self.friends_service = friends_service
         self.start_value = start_value
         self.end_value = end_value
+        self.ignored_profiles_raw = ignored_profiles_raw
         self.settings = settings
-        self.blacklist_raw = blacklist_raw
         self.cache_store = cache_store
         self._cancel = False
 
@@ -44,16 +44,17 @@ class SearchWorker(QObject):
             self.client.api_delay = self.settings.api_delay
             self.progress.emit("[search] Разрешаем пользователей...")
 
+            cache_store = self.cache_store if self.settings.use_cache else None
             start_id = resolve_user_id(
                 self.client,
                 self.start_value,
-                self.cache_store if self.settings.use_cache else None,
+                cache_store,
                 self.progress.emit,
             )
             end_id = resolve_user_id(
                 self.client,
                 self.end_value,
-                self.cache_store if self.settings.use_cache else None,
+                cache_store,
                 self.progress.emit,
             )
 
@@ -66,10 +67,10 @@ class SearchWorker(QObject):
             self.progress.emit(f"[search] Старт: https://vk.com/id{start_id}")
             self.progress.emit(f"[search] Финиш: https://vk.com/id{end_id}")
 
-            blacklist = resolve_blacklist(
+            ignored_profiles = resolve_blacklist(
                 self.client,
-                self.blacklist_raw,
-                self.cache_store if self.settings.use_cache else None,
+                self.ignored_profiles_raw,
+                cache_store,
                 self.progress.emit,
             )
 
@@ -79,7 +80,7 @@ class SearchWorker(QObject):
                 start_id,
                 end_id,
                 self.settings,
-                blacklist,
+                ignored_profiles,
                 progress_callback=self.progress.emit,
                 cancel_checker=self._cancelled,
             )

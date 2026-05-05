@@ -49,3 +49,25 @@ API_DELAY = 0.34
 
 Приложение не выводит полный `access_token` в UI или лог. Для отображения
 используется маска вида `vk2.a.ab...wxyz`.
+
+## TODO: автоматическое получение токена
+
+Заготовка находится в `vk/barkov_token_flow.py`.
+
+Заполнять нужно эти места:
+
+1. `BarkovTokenAcquirer.acquire_token()` — общий сценарий браузера.
+2. `open_friends_followers_section()` — выбор «Друзья и подписчики».
+3. `open_collect_friends_followers_tool()` — выбор «Сбор друзей и подписчиков».
+4. `login_with_vk()` — вход через VK и попытка взять `user_id` из OAuth redirect.
+5. `fill_vk_profile()` — заполнение профиля для сбора.
+6. `click_collect_button()` — кнопка «Собрать друзей и подписчиков страницы».
+7. `wait_for_vkresult_request()` — ожидание network-запроса к `vkresult.ru/method/*`.
+8. `extract_access_token_from_request()` — парсинг `access_token` из URL.
+
+Статическая helper-страница для GitHub Pages лежит в `docs/auth-helper/`.
+Она подготовлена под URL:
+
+```text
+https://r7zex.github.io/vk_handshakes/auth-helper/
+```

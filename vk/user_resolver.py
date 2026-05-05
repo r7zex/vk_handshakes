@@ -1,3 +1,4 @@
+import re
 from collections.abc import Iterable
 
 from utils.normalize import normalize_vk_input
@@ -38,6 +39,15 @@ def resolve_user_id(client, value: str, cache_store=None, logger_callback=None) 
         return None
 
 
+def split_ignored_profiles(raw: str | Iterable[str]) -> list[str]:
+    if isinstance(raw, str):
+        entries = re.split(r"[,;\n]+", raw)
+    else:
+        entries = list(raw)
+
+    return [entry.strip() for entry in entries if entry.strip()]
+
+
 def resolve_blacklist(
     client,
     raw: str | Iterable[str],
@@ -45,27 +55,22 @@ def resolve_blacklist(
     logger_callback=None,
 ) -> set[int]:
     result: set[int] = set()
+    entries = split_ignored_profiles(raw)
 
-    if isinstance(raw, str):
-        entries = raw.splitlines()
-    else:
-        entries = list(raw)
-
-    entries = [entry.strip() for entry in entries if entry.strip()]
     if not entries:
         return result
 
     if logger_callback:
-        logger_callback(f"[search] Разрешаем чёрный список: {len(entries)} записей")
+        logger_callback(f"[search] Разрешаем профили для исключения: {len(entries)}")
 
     for entry in entries:
         uid = resolve_user_id(client, entry, cache_store, logger_callback)
         if uid is not None:
             result.add(uid)
             if logger_callback:
-                logger_callback(f"[search] blacklist: {entry} → id{uid}")
+                logger_callback(f"[search] не учитываем: {entry} → id{uid}")
         elif logger_callback:
-            logger_callback(f"[warning] blacklist: {entry} не удалось разрешить")
+            logger_callback(f"[warning] не удалось разрешить профиль: {entry}")
 
     return result
 
