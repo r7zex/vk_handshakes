@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.venv/
+*.log
+build/
+dist/
+*.spec
+.vscode/
+*.sqlite
+settings.json
+token.txt

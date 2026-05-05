@@ -1,0 +1,6 @@
+QWidget { background: #111827; color: #e5e7eb; font-size: 13px; }
+QLineEdit, QTextEdit, QSpinBox, QDoubleSpinBox { background: #1f2937; border: 1px solid #374151; border-radius: 8px; padding: 6px; }
+QPushButton { background: #2563eb; border: none; border-radius: 8px; padding: 8px 12px; color: white; font-weight: 600; }
+QPushButton:disabled { background: #374151; color: #9ca3af; }
+QGroupBox { border: 1px solid #374151; border-radius: 12px; margin-top: 12px; padding: 8px; }
+QGroupBox::title { subcontrol-origin: margin; left: 8px; padding: 0 4px; }
