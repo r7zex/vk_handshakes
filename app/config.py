@@ -13,8 +13,6 @@ class AppConfig(BaseModel):
     jsonp_callback: str = "jQuery22409162834852248698_1778000624926"
     cache_enabled_default: bool = True
     app_name: str = "VKHandshakes"
-    barkov_base_url: str = "https://vk.barkov.net/"
-    github_pages_auth_helper_url: str = "https://r7zex.github.io/vk_handshakes/auth-helper/"
     resolved_users_ttl_seconds: int = 7 * 24 * 60 * 60
     friends_cache_ttl_seconds: int = 24 * 60 * 60
     profile_cache_ttl_seconds: int = 7 * 24 * 60 * 60

@@ -106,7 +106,7 @@ class VkApiClient:
                 self.logger("warning", f"[token] {code}: {message}. Требуется новый токен.")
                 if token_attempts > 2:
                     raise TokenExpiredError(code, message, data)
-                self.token_manager.refresh_or_reauth()
+                self.token_manager.rotate_token()
                 continue
 
             raise VkApiError(code, message, data)
