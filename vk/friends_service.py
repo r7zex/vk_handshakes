@@ -18,6 +18,8 @@ def is_profile_open(profile: dict[str, Any]) -> bool:
 
 
 class FriendsService:
+    ROOT_PAGE_SIZE = 5000
+
     def __init__(self, client, cache_store=None, logger_callback=None):
         self.client = client
         self.cache_store = cache_store
@@ -85,6 +87,47 @@ class FriendsService:
             f"[vk] users.get batch: проверено {len(unchecked)} профилей",
         )
 
+    def _load_friends_response(self, user_id: int, count: int, offset: int) -> dict[str, Any]:
+        response = self.client.friends_get_execute(
+            user_id=user_id,
+            count=count,
+            offset=offset,
+        )
+
+        if response.get("_execute_failed"):
+            response = self.client.friends_get_direct(
+                user_id=user_id,
+                count=count,
+                offset=offset,
+            )
+
+        return response
+
+    def _load_root_friends(self, user_id: int, cancel_checker=None) -> tuple[int, list[int]]:
+        all_items: list[int] = []
+        total = 0
+        offset = 0
+
+        while True:
+            self._check_cancel(cancel_checker)
+            response = self._load_friends_response(
+                user_id=user_id,
+                count=self.ROOT_PAGE_SIZE,
+                offset=offset,
+            )
+            total = int(response.get("count", 0))
+            items = response.get("items", [])
+            if not isinstance(items, list) or not items:
+                break
+
+            all_items.extend(int(uid) for uid in items)
+            offset += len(items)
+
+            if offset >= total:
+                break
+
+        return total, all_items
+
     def get_friends(
         self,
         user_id: int,
@@ -112,39 +155,17 @@ class FriendsService:
                 return cached
 
         try:
-            count_to_load = settings.max_root_friends if force else settings.max_friends_per_user
-            response = self.client.friends_get_execute(
-                user_id=user_id,
-                count=count_to_load,
-                offset=0,
-            )
-
-            if response.get("_execute_failed"):
-                self._progress(
-                    progress_callback,
-                    f"[fallback] uid={user_id} — execute вернул false, пробуем friends.get",
+            if force:
+                total, raw_friends = self._load_root_friends(user_id, cancel_checker)
+            else:
+                response = self._load_friends_response(
+                    user_id=user_id,
+                    count=settings.max_friends_per_user,
+                    offset=0,
                 )
-                try:
-                    response = self.client.friends_get_direct(
-                        user_id=user_id,
-                        count=count_to_load,
-                        offset=0,
-                    )
-                except VkApiError as exc:
-                    self._skip_private(
-                        user_id,
-                        exc,
-                        cache_key,
-                        friends_cache,
-                        settings,
-                        progress_callback,
-                    )
-                    return []
-
-            total = int(response.get("count", 0))
-            items = response.get("items", [])
-            if not isinstance(items, list):
-                items = []
+                total = int(response.get("count", 0))
+                items = response.get("items", [])
+                raw_friends = [int(uid) for uid in items] if isinstance(items, list) else []
 
             if settings.exclude_hubs and not force and total > settings.max_friends_per_user:
                 hub_cache.add(user_id)
@@ -157,8 +178,6 @@ class FriendsService:
                 )
                 friends_cache[cache_key] = []
                 return []
-
-            raw_friends = [int(uid) for uid in items]
 
             if raw_friends and settings.filter_closed_profiles:
                 self.batch_check_profiles(
