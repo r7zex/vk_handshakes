@@ -6,6 +6,19 @@ from utils.formatting import format_user_url
 from vk.errors import SearchCancelledError
 
 
+def _format_eta(seconds: float | None) -> str:
+    if seconds is None or seconds < 0:
+        return "--:--"
+
+    total_seconds = int(seconds)
+    minutes, seconds = divmod(total_seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+
+    if hours:
+        return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+    return f"{minutes:02d}:{seconds:02d}"
+
+
 def bidirectional_bfs(
     client,
     friends_service,
@@ -80,12 +93,6 @@ def bidirectional_bfs(
 
         return path_fwd + path_bwd
 
-    emit(
-        "[search] Старт BFS: "
-        f"start=id{start_id}, end=id{end_id}, "
-        f"MAX_DEPTH={settings.max_depth}, MAX_FRIENDS={settings.max_friends_per_user}"
-    )
-
     max_side_depth = settings.max_depth // 2
 
     while queue_fwd and queue_bwd:
@@ -95,12 +102,12 @@ def bidirectional_bfs(
             current_queue = queue_fwd
             current_visited = visited_fwd
             other_visited = visited_bwd
-            direction = "start → end"
+            direction_number = 1
         else:
             current_queue = queue_bwd
             current_visited = visited_bwd
             other_visited = visited_fwd
-            direction = "end → start"
+            direction_number = 2
 
         user_id, depth = current_queue.popleft()
 
@@ -108,12 +115,6 @@ def bidirectional_bfs(
             continue
 
         processed_users += 1
-        emit(
-            f"[search] {direction}: uid={user_id}, глубина={depth}, "
-            f"front_fwd={len(queue_fwd)}, front_bwd={len(queue_bwd)}, "
-            f"requests={client.requests_count}"
-        )
-
         is_root = depth == 0
         friends = friends_service.get_friends(
             user_id=user_id,
@@ -122,18 +123,34 @@ def bidirectional_bfs(
             hub_cache=hub_cache,
             friends_cache=friends_cache,
             profile_cache=profile_cache,
-            progress_callback=progress_callback,
+            progress_callback=None,
             cancel_checker=cancel_checker,
         )
 
         if is_root and not friends:
             emit(
-                f"[warning] Корневой uid={user_id} не вернул доступных друзей. "
-                "Профиль закрыт или список друзей пуст."
+                f"Профиль {direction_number} (id{user_id}), "
+                "список друзей пуст или недоступен"
             )
 
-        for friend_id in friends:
+        total_friends = len(friends)
+        progress_step = max(total_friends // 20, 1)
+        profile_started = time.time()
+
+        for index, friend_id in enumerate(friends, start=1):
             check_cancel()
+
+            if index == 1 or index == total_friends or index % progress_step == 0:
+                elapsed = time.time() - profile_started
+                eta = None
+                if index > 0:
+                    eta = elapsed / index * (total_friends - index)
+                emit(
+                    f"Профиль {direction_number} (id{user_id}), "
+                    f"рукопожатие {depth + 1} -> обработано "
+                    f"{index}/{total_friends} друзей, "
+                    f"осталось времени {_format_eta(eta)}"
+                )
 
             if friend_id in blacklist:
                 continue
@@ -158,13 +175,13 @@ def bidirectional_bfs(
                     friend_id,
                     settings,
                     hub_cache,
-                    progress_callback=progress_callback,
+                    progress_callback=None,
                     cancel_checker=cancel_checker,
                 ):
                     continue
 
                 path = reconstruct_path(friend_id)
-                emit(f"[result] Точка встречи фронтов: uid={friend_id}")
+                emit(f"Точка встречи фронтов: id{friend_id}")
                 return make_result(
                     True,
                     path,
