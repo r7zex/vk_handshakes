@@ -14,7 +14,7 @@ class TokenManager:
         self._token = token
         return token
 
-    def refresh_or_reauth(self) -> str:
+    def rotate_token(self) -> str:
         self.delete_token()
         return self.get_valid_token()
 
