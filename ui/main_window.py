@@ -25,7 +25,6 @@ from search.models import SearchSettings
 from storage.cache_store import CacheStore
 from storage.settings_store import SettingsStore
 from storage.token_store import TokenStore
-from ui.workers.auth_worker import AuthWorker
 from ui.workers.search_worker import SearchWorker
 from utils.formatting import format_path, mask_token
 from utils.validation import validate_search_form
@@ -104,7 +103,6 @@ class MainWindow(QWidget):
         self.auth_label.setObjectName("AuthStatus")
         self.token_input = QLineEdit()
         self.token_input.setPlaceholderText("Вставьте access_token или ссылку с access_token=...")
-        self.token_input.setEchoMode(QLineEdit.Password)
 
         self.btn_save_token = QPushButton("Сохранить токен")
         self.btn_reset_token = QPushButton("Сбросить токен")
@@ -270,7 +268,7 @@ class MainWindow(QWidget):
         self.manual_provider.set_token(token)
         self.token_manager.save_token(token)
         self.token_input.clear()
-        self.auth_label.setText(f"Токен сохранён: {mask_token(token)}. Проверяем...")
+        self.auth_label.setText(f"Токен сохранён: {mask_token(token)}.")
         self.log("auth", f"токен сохранён: {mask_token(token)}")
 
     def on_auth_finished(self, ok: bool, message: str) -> None:
