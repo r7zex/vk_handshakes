@@ -1,9 +1,10 @@
 class VkApiError(Exception):
     def __init__(self, code: int | None, message: str, raw: dict | None = None):
-        super().__init__(message)
         self.code = code
         self.message = message
         self.raw = raw or {}
+        prefix = f"VK API error {code}" if code is not None else "VK API error"
+        super().__init__(f"{prefix}: {message}")
 
 
 class TokenExpiredError(VkApiError):
