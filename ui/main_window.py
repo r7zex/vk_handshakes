@@ -6,7 +6,6 @@ from PySide6.QtCore import QThread
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
-    QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
     QGridLayout,
@@ -101,7 +100,7 @@ class MainWindow(QWidget):
         self.auth_label = QLabel("Токен не найден")
         self.auth_label.setObjectName("AuthStatus")
         self.token_input = QLineEdit()
-        self.token_input.setPlaceholderText("Вставьте access_token или ссылку с access_token=...")
+        self.token_input.setPlaceholderText("Вставьте VK-токен или ссылку с ним")
 
         self.btn_save_token = QPushButton("Сохранить токен")
         self.btn_reset_token = QPushButton("Сбросить токен")
@@ -135,16 +134,6 @@ class MainWindow(QWidget):
         self.max_friends = QSpinBox()
         self.max_friends.setRange(1, 100000)
         self.max_friends.setValue(self.settings.max_friends_per_user)
-        self.max_root = QSpinBox()
-        self.max_root.setRange(1, 100000)
-        self.max_root.setValue(self.settings.max_root_friends)
-        self.api_delay = QDoubleSpinBox()
-        self.api_delay.setRange(0.0, 30.0)
-        self.api_delay.setSingleStep(0.05)
-        self.api_delay.setValue(self.settings.api_delay)
-        self.profile_batch_size = QSpinBox()
-        self.profile_batch_size.setRange(1, 1000)
-        self.profile_batch_size.setValue(self.settings.profile_batch_size)
 
         self.forbid_direct = QCheckBox("Не учитывать прямую дружбу")
         self.forbid_direct.setChecked(self.settings.forbid_direct_connection)
@@ -156,9 +145,6 @@ class MainWindow(QWidget):
         form.addRow("Не учитывать в рукопожатиях", self.ignored_profiles)
         form.addRow("Макс кол-во рукопожатий", self.max_depth)
         form.addRow("Макс кол-во друзей у пользователя", self.max_friends)
-        # form.addRow("Друзей у стартовых профилей", self.max_root) <- Удалить и сделай так, чтобы на начальном и конечном пользователях не учитывалиись ограничения
-        # form.addRow("Пауза между VK-запросами", self.api_delay) <- Убрать возможгость меня
-        # form.addRow("Размер проверки профилей", self.profile_batch_size) <- Это вообще к чему? Мы учитываем только по кол-ву друзей проверяем или нет, и всё, не надо химичить.
         form.addRow(self.forbid_direct)
         form.addRow(self.use_cache)
         return search
@@ -232,12 +218,13 @@ class MainWindow(QWidget):
         self.logs.verticalScrollBar().setValue(self.logs.verticalScrollBar().maximum())
 
     def _settings_from_ui(self) -> SearchSettings:
+        defaults = SearchSettings()
         return SearchSettings(
             max_depth=self.max_depth.value(),
             max_friends_per_user=self.max_friends.value(),
-            max_root_friends=self.max_root.value(),
-            api_delay=self.api_delay.value(),
-            profile_batch_size=self.profile_batch_size.value(),
+            max_root_friends=defaults.max_root_friends,
+            api_delay=defaults.api_delay,
+            profile_batch_size=defaults.profile_batch_size,
             forbid_direct_connection=self.forbid_direct.isChecked(),
             filter_closed_profiles=True,
             exclude_hubs=True,
@@ -260,8 +247,8 @@ class MainWindow(QWidget):
     def on_save_token(self) -> None:
         token = extract_token(self.token_input.text())
         if not token:
-            self.auth_label.setText("Не удалось извлечь access_token")
-            self.log("warning", "Вставьте чистый токен или ссылку, где есть access_token=...")
+            self.auth_label.setText("Не удалось извлечь токен")
+            self.log("warning", "Вставьте чистый токен или ссылку, где он есть")
             return
 
         self.manual_provider.set_token(token)
@@ -285,6 +272,7 @@ class MainWindow(QWidget):
         if errors:
             self.result.setPlainText("; ".join(errors))
             self.log("warning", "; ".join(errors))
+            self.btn_start.setEnabled(True)
             return
 
         self.settings_store.save_settings(settings)
@@ -293,7 +281,6 @@ class MainWindow(QWidget):
         self.friends_service.filtered_profiles_count = 0
         self.friends_service.hubs_count = 0
         self.result.setHtml("<b>Поиск запущен...</b>")
-        self.log("search", "запускаем двунаправленный BFS")
 
         self.search_thread = QThread(self)
         self.search_worker = SearchWorker(
@@ -307,7 +294,7 @@ class MainWindow(QWidget):
         )
         self.search_worker.moveToThread(self.search_thread)
         self.search_thread.started.connect(self.search_worker.run)
-        self.search_worker.progress.connect(lambda message: self.log("info", message))
+        self.search_worker.progress.connect(lambda message: self.log("search", message))
         self.search_worker.finished.connect(self.on_finished)
         self.search_worker.failed.connect(self.on_failed)
         self.search_worker.finished.connect(self.search_thread.quit)
@@ -327,7 +314,7 @@ class MainWindow(QWidget):
 
     def on_failed(self, error: str) -> None:
         self.client.logger = lambda *_: None
-        self.btn_start.setEnabled(False)
+        self.btn_start.setEnabled(True)
         self.btn_stop.setEnabled(False)
         self.result.setPlainText(f"Ошибка: {error}")
         self.log("error", error)
@@ -335,6 +322,7 @@ class MainWindow(QWidget):
     def on_finished(self, result) -> None:
         self.client.logger = lambda *_: None
         self.last_result = result
+        self.btn_start.setEnabled(True)
         self.btn_stop.setEnabled(False)
 
         if result.found:
