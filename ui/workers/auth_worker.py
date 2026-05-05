@@ -9,7 +9,7 @@ class AuthWorker(QObject):
         self.token_manager = token_manager
 
     @Slot()
-    def run(self):
+    def run(self) -> None:
         try:
             self.token_manager.get_valid_token()
             self.finished.emit(True, "Авторизован")
