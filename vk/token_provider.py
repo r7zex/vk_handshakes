@@ -2,8 +2,6 @@ import re
 from abc import ABC, abstractmethod
 from urllib.parse import parse_qs, urlparse
 
-from vk.barkov_token_flow import BarkovTokenAcquirer, BarkovTokenRequest
-
 
 def extract_token(raw: str) -> str | None:
     value = raw.strip()
@@ -58,33 +56,6 @@ class ManualTokenProvider(TokenProvider):
             self._token = None
 
 
-class BarkovTokenProvider(TokenProvider):
-    """Automatic token provider scaffold.
-
-    TokenManager already calls TokenProvider.get_token() when the saved token is
-    absent or invalid. After vk.barkov.net browser automation is implemented in
-    BarkovTokenAcquirer, this provider will become the automatic fallback.
-    """
-
-    def __init__(self, acquirer: BarkovTokenAcquirer | None = None, logger_callback=None):
-        self.acquirer = acquirer or BarkovTokenAcquirer(logger_callback)
-        self.logger = logger_callback or (lambda *_: None)
-        self.preferred_vk_profile: str | None = None
-
-    def set_preferred_vk_profile(self, value: str | None) -> None:
-        self.preferred_vk_profile = value.strip() if value and value.strip() else None
-
-    def get_token(self) -> str | None:
-        result = self.acquirer.acquire_token(
-            BarkovTokenRequest(vk_profile_input=self.preferred_vk_profile)
-        )
-        if result.ok:
-            return result.access_token
-        if result.error:
-            self.logger("warning", f"[auth] {result.error}")
-        return None
-
-
 class CompositeTokenProvider(TokenProvider):
     def __init__(self, providers: list[TokenProvider]):
         self.providers = providers
@@ -101,15 +72,3 @@ class CompositeTokenProvider(TokenProvider):
             discard = getattr(provider, "discard_token", None)
             if discard:
                 discard(token)
-
-
-class BrowserAuthTokenProvider(BarkovTokenProvider):
-    """Backward-compatible name for the automatic browser provider."""
-
-
-class LocalSessionTokenProvider(TokenProvider):
-    def __init__(self, token_store):
-        self.token_store = token_store
-
-    def get_token(self) -> str | None:
-        return self.token_store.load_token()

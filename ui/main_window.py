@@ -33,8 +33,6 @@ from vk.api_client import VkApiClient
 from vk.friends_service import FriendsService
 from vk.token_manager import TokenManager
 from vk.token_provider import (
-    BarkovTokenProvider,
-    CompositeTokenProvider,
     ManualTokenProvider,
     extract_token,
 )
@@ -51,15 +49,7 @@ class MainWindow(QWidget):
         self.token_store = TokenStore()
         self.cache_store = CacheStore()
         self.manual_provider = ManualTokenProvider()
-        self.browser_provider = BarkovTokenProvider(logger_callback=self._provider_log)
-        self.token_provider = CompositeTokenProvider(
-            [self.manual_provider, self.browser_provider]
-        )
-        self.token_manager = TokenManager(
-            self.token_store,
-            self.token_provider,
-            self._validate_token,
-        )
+        self.token_manager = TokenManager(self.token_store, self.manual_provider)
         self.client = VkApiClient(self.token_manager)
         self.friends_service = FriendsService(self.client, self.cache_store)
 
@@ -72,7 +62,7 @@ class MainWindow(QWidget):
 
         self._build_ui()
         self._render_empty_result()
-        self.log("info", "Готово к работе. Проверьте токен или запустите автоматическое получение.")
+        self.log("info", "Готово к работе. Вставьте токен и нажмите «Сохранить токен».")
         if self.token_manager.has_token():
             self.check_token_async()
 
@@ -118,21 +108,18 @@ class MainWindow(QWidget):
         self.token_input.setPlaceholderText("Вставьте access_token или ссылку с access_token=...")
         self.token_input.setEchoMode(QLineEdit.Password)
 
-        self.btn_auto_token = QPushButton("Получить токен автоматически")
-        self.btn_save_token = QPushButton("Вставить токен вручную")
+        self.btn_save_token = QPushButton("Сохранить токен")
         self.btn_check_token = QPushButton("Проверить токен")
         self.btn_reset_token = QPushButton("Сбросить токен")
 
-        self.btn_auto_token.clicked.connect(self.check_token_async)
         self.btn_save_token.clicked.connect(self.on_save_token)
         self.btn_check_token.clicked.connect(self.check_token_async)
         self.btn_reset_token.clicked.connect(self.on_reset_token)
 
         auth_buttons = QGridLayout()
-        auth_buttons.addWidget(self.btn_auto_token, 0, 0, 1, 2)
-        auth_buttons.addWidget(self.btn_save_token, 1, 0)
-        auth_buttons.addWidget(self.btn_check_token, 1, 1)
-        auth_buttons.addWidget(self.btn_reset_token, 2, 0, 1, 2)
+        auth_buttons.addWidget(self.btn_save_token, 0, 0)
+        auth_buttons.addWidget(self.btn_check_token, 0, 1)
+        auth_buttons.addWidget(self.btn_reset_token, 1, 0, 1, 2)
 
         auth_form.addRow("Статус", self.auth_label)
         auth_form.addRow("Токен", self.token_input)
@@ -230,10 +217,6 @@ class MainWindow(QWidget):
         result_layout.addLayout(result_buttons)
         return result_box
 
-    def _provider_log(self, level: str, message: str) -> None:
-        if hasattr(self, "logs"):
-            self.log(level, message)
-
     def log(self, level: str, message: str) -> None:
         colors = {
             "auth": "#60a5fa",
@@ -255,25 +238,6 @@ class MainWindow(QWidget):
             "</div>"
         )
         self.logs.verticalScrollBar().setValue(self.logs.verticalScrollBar().maximum())
-
-    def _validate_token(self, token: str) -> bool:
-        class StaticTokenManager:
-            def get_valid_token(self):
-                return token
-
-            def invalidate_token(self):
-                return None
-
-            def refresh_or_reauth(self):
-                return token
-
-        tmp = VkApiClient(StaticTokenManager())
-        tmp.api_delay = 0
-        try:
-            tmp.users_get("1")
-            return True
-        except Exception:
-            return False
 
     def _settings_from_ui(self) -> SearchSettings:
         return SearchSettings(
@@ -319,12 +283,10 @@ class MainWindow(QWidget):
         if self.auth_thread and self.auth_thread.isRunning():
             return
 
-        self.browser_provider.set_preferred_vk_profile(self.user1.text())
         self.auth_label.setText("Проверяем токен...")
         self.btn_check_token.setEnabled(False)
-        self.btn_auto_token.setEnabled(False)
         self.btn_start.setEnabled(False)
-        self.log("auth", "проверяем сохранённый токен или пробуем автоматическое получение")
+        self.log("auth", "проверяем сохранённый токен")
 
         self.auth_thread = QThread(self)
         self.auth_worker = AuthWorker(self.token_manager)
@@ -340,7 +302,6 @@ class MainWindow(QWidget):
     def on_auth_finished(self, ok: bool, message: str) -> None:
         self.token_ok = ok
         self.btn_check_token.setEnabled(True)
-        self.btn_auto_token.setEnabled(True)
         self.btn_start.setEnabled(ok)
         self.auth_label.setText(message)
         self.log("success" if ok else "warning", message)
