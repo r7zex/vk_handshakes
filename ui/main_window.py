@@ -63,8 +63,6 @@ class MainWindow(QWidget):
         self._build_ui()
         self._render_empty_result()
         self.log("info", "Готово к работе. Вставьте токен и нажмите «Сохранить токен».")
-        if self.token_manager.has_token():
-            self.check_token_async()
 
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
@@ -109,17 +107,14 @@ class MainWindow(QWidget):
         self.token_input.setEchoMode(QLineEdit.Password)
 
         self.btn_save_token = QPushButton("Сохранить токен")
-        self.btn_check_token = QPushButton("Проверить токен")
         self.btn_reset_token = QPushButton("Сбросить токен")
 
         self.btn_save_token.clicked.connect(self.on_save_token)
-        self.btn_check_token.clicked.connect(self.check_token_async)
         self.btn_reset_token.clicked.connect(self.on_reset_token)
 
         auth_buttons = QGridLayout()
         auth_buttons.addWidget(self.btn_save_token, 0, 0)
-        auth_buttons.addWidget(self.btn_check_token, 0, 1)
-        auth_buttons.addWidget(self.btn_reset_token, 1, 0, 1, 2)
+        auth_buttons.addWidget(self.btn_reset_token, 0, 1)
 
         auth_form.addRow("Статус", self.auth_label)
         auth_form.addRow("Токен", self.token_input)
@@ -277,31 +272,9 @@ class MainWindow(QWidget):
         self.token_input.clear()
         self.auth_label.setText(f"Токен сохранён: {mask_token(token)}. Проверяем...")
         self.log("auth", f"токен сохранён: {mask_token(token)}")
-        self.check_token_async()
-
-    def check_token_async(self) -> None:
-        if self.auth_thread and self.auth_thread.isRunning():
-            return
-
-        self.auth_label.setText("Проверяем токен...")
-        self.btn_check_token.setEnabled(False)
-        self.btn_start.setEnabled(False)
-        self.log("auth", "проверяем сохранённый токен")
-
-        self.auth_thread = QThread(self)
-        self.auth_worker = AuthWorker(self.token_manager)
-        self.auth_worker.moveToThread(self.auth_thread)
-        self.auth_thread.started.connect(self.auth_worker.run)
-        self.auth_worker.finished.connect(self.on_auth_finished)
-        self.auth_worker.finished.connect(self.auth_thread.quit)
-        self.auth_thread.finished.connect(self.auth_worker.deleteLater)
-        self.auth_thread.finished.connect(self.auth_thread.deleteLater)
-        self.auth_thread.finished.connect(self._clear_auth_thread)
-        self.auth_thread.start()
 
     def on_auth_finished(self, ok: bool, message: str) -> None:
         self.token_ok = ok
-        self.btn_check_token.setEnabled(True)
         self.btn_start.setEnabled(ok)
         self.auth_label.setText(message)
         self.log("success" if ok else "warning", message)
