@@ -37,25 +37,28 @@ class SearchWorker(QObject):
     def _cancelled(self) -> bool:
         return self._cancel
 
+    def _client_log(self, level: str, message: str) -> None:
+        if level in {"warning", "error"}:
+            self.progress.emit(message)
+
     @Slot()
     def run(self) -> None:
         try:
-            self.client.logger = lambda _level, message: self.progress.emit(message)
+            self.client.logger = self._client_log
             self.client.api_delay = self.settings.api_delay
-            self.progress.emit("[search] Разрешаем пользователей...")
 
             cache_store = self.cache_store if self.settings.use_cache else None
             start_id = resolve_user_id(
                 self.client,
                 self.start_value,
                 cache_store,
-                self.progress.emit,
+                None,
             )
             end_id = resolve_user_id(
                 self.client,
                 self.end_value,
                 cache_store,
-                self.progress.emit,
+                None,
             )
 
             if start_id is None or end_id is None:
@@ -64,14 +67,13 @@ class SearchWorker(QObject):
             if self._cancelled():
                 raise SearchCancelledError()
 
-            self.progress.emit(f"[search] Старт: https://vk.com/id{start_id}")
-            self.progress.emit(f"[search] Финиш: https://vk.com/id{end_id}")
+            self.progress.emit(f"Начало поиска: id{start_id} → id{end_id}")
 
             ignored_profiles = resolve_blacklist(
                 self.client,
                 self.ignored_profiles_raw,
                 cache_store,
-                self.progress.emit,
+                None,
             )
 
             result = bidirectional_bfs(
