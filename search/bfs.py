@@ -52,9 +52,33 @@ def bidirectional_bfs(
             f"обработано профилей {layer_processed[key]}/{layer_totals[key]}"
         )
 
+    def is_endpoint(user_id: int) -> bool:
+        return user_id == start_id or user_id == end_id
+
+    def is_forbidden_hub(user_id: int) -> bool:
+        if not settings.exclude_hubs or is_endpoint(user_id):
+            return False
+        if user_id in hub_cache:
+            return True
+        return friends_service.probe_is_hub(
+            user_id,
+            settings,
+            hub_cache,
+            progress_callback=None,
+            cancel_checker=cancel_checker,
+        )
+
+    def path_has_forbidden_hub(path: list[int]) -> bool:
+        for uid in path[1:-1]:
+            check_cancel()
+            if is_forbidden_hub(uid):
+                emit(f"Пропущена цепочка через hub id{uid}")
+                return True
+        return False
+
     processed_users = 0
     hub_cache: set[int] = set()
-    friends_cache: dict[tuple[int, bool], list[int]] = {}
+    friends_cache: dict[tuple[int, bool, int], list[int]] = {}
     profile_cache: dict[int, dict] = {}
     layer_totals: dict[tuple[str, int], int] = {}
     layer_processed: dict[tuple[str, int], int] = {}
@@ -115,6 +139,9 @@ def bidirectional_bfs(
         if depth >= max_side_depth:
             continue
 
+        if is_forbidden_hub(user_id):
+            continue
+
         processed_users += 1
         emit_layer_progress(side, current_queue, depth)
 
@@ -151,26 +178,26 @@ def bidirectional_bfs(
             if friend_id in current_visited:
                 continue
 
-            current_visited[friend_id] = user_id
-            current_queue.append((friend_id, depth + 1))
-
             if friend_id in other_visited:
-                if settings.exclude_hubs and friends_service.probe_is_hub(
-                    friend_id,
-                    settings,
-                    hub_cache,
-                    progress_callback=None,
-                    cancel_checker=cancel_checker,
-                ):
+                if is_forbidden_hub(friend_id):
                     continue
 
+                current_visited[friend_id] = user_id
                 path = reconstruct_path(friend_id)
+
+                if path_has_forbidden_hub(path):
+                    current_visited.pop(friend_id, None)
+                    continue
+
                 emit(f"Точка встречи фронтов: id{friend_id}")
                 return make_result(
                     True,
                     path,
                     f"Найден путь длиной {len(path) - 1} рукопожатий",
                 )
+
+            current_visited[friend_id] = user_id
+            current_queue.append((friend_id, depth + 1))
 
     return make_result(
         False,
