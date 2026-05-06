@@ -266,6 +266,9 @@ class MainWindow(QWidget):
         self.log("auth", "токен удалён")
 
     def on_start(self) -> None:
+        if self.search_thread and self.search_thread.isRunning():
+            return
+
         settings = self._settings_from_ui()
         self.btn_start.setEnabled(False)
         errors = validate_search_form(self.user1.text(), self.user2.text(), settings)
@@ -420,3 +423,11 @@ class MainWindow(QWidget):
     def _clear_search_thread(self) -> None:
         self.search_worker = None
         self.search_thread = None
+
+    def closeEvent(self, event) -> None:
+        if self.search_worker:
+            self.search_worker.cancel()
+        if self.search_thread and self.search_thread.isRunning():
+            self.search_thread.quit()
+            self.search_thread.wait(3000)
+        event.accept()
