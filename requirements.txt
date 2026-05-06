@@ -3,3 +3,4 @@ requests>=2.32
 pydantic>=2.7
 keyring>=25.0
 loguru>=0.7
+playwright>=1.40

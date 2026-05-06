@@ -27,6 +27,7 @@ from storage.token_store import TokenStore
 from ui.workers.search_worker import SearchWorker
 from utils.formatting import format_path, mask_token
 from utils.validation import validate_search_form
+from utils.get_token import get_token_from_site
 from vk.api_client import VkApiClient
 from vk.friends_service import FriendsService
 from vk.token_manager import TokenManager
@@ -104,9 +105,7 @@ class MainWindow(QWidget):
 
         self.btn_save_token = QPushButton("Сохранить токен")
         self.btn_reset_token = QPushButton("Сбросить токен")
-        self.btn_auto_token = QPushButton(
-            "Вставить автоматически (требуется авторизация через ВК)"
-        )
+        self.btn_auto_token = QPushButton("Вставить автоматически (требуется авторизация через ВК)")
 
         self.btn_save_token.clicked.connect(self.on_save_token)
         self.btn_reset_token.clicked.connect(self.on_reset_token)
@@ -271,6 +270,13 @@ class MainWindow(QWidget):
         self.log("auth", "токен удалён")
 
     def on_auto_token(self) -> None:
+        token = get_token_from_site()
+        self.manual_provider.set_token(token)
+        self.token_manager.save_token(token)
+        self.token_input.clear()
+        self.btn_start.setEnabled(True)
+        self.auth_label.setText(f"Токен сохранён: {mask_token(token)}.")
+        self.log("auth", f"токен сохранён: {mask_token(token)}")
         self.log(
             "auth",
             "кнопка автоматической вставки токена добавлена; обработчик авторизации ещё не подключён",

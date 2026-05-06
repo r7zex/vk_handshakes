@@ -7,7 +7,7 @@ class AppConfig(BaseModel):
     max_depth_default: int = 11
     max_friends_per_user_default: int = 250
     max_root_friends_default: int = 5000
-    api_delay_default: float = 0.34
+    api_delay_default: float = 0.001
     request_timeout: float = 20.0
     profile_batch_size: int = 200
     jsonp_callback: str = "jQuery22409162834852248698_1778000624926"
