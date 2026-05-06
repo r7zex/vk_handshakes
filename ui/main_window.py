@@ -104,13 +104,18 @@ class MainWindow(QWidget):
 
         self.btn_save_token = QPushButton("Сохранить токен")
         self.btn_reset_token = QPushButton("Сбросить токен")
+        self.btn_auto_token = QPushButton(
+            "Вставить автоматически (требуется авторизация через ВК)"
+        )
 
         self.btn_save_token.clicked.connect(self.on_save_token)
         self.btn_reset_token.clicked.connect(self.on_reset_token)
+        self.btn_auto_token.clicked.connect(self.on_auto_token)
 
         auth_buttons = QGridLayout()
         auth_buttons.addWidget(self.btn_save_token, 0, 0)
         auth_buttons.addWidget(self.btn_reset_token, 0, 1)
+        auth_buttons.addWidget(self.btn_auto_token, 1, 0, 1, 2)
 
         auth_form.addRow("Статус", self.auth_label)
         auth_form.addRow("Токен", self.token_input)
@@ -264,6 +269,12 @@ class MainWindow(QWidget):
         self.btn_start.setEnabled(False)
         self.auth_label.setText("Токен сброшен")
         self.log("auth", "токен удалён")
+
+    def on_auto_token(self) -> None:
+        self.log(
+            "auth",
+            "кнопка автоматической вставки токена добавлена; обработчик авторизации ещё не подключён",
+        )
 
     def on_start(self) -> None:
         if self.search_thread and self.search_thread.isRunning():
