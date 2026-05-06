@@ -50,14 +50,16 @@ class FriendsService:
 
         for uid in user_ids:
             self._check_cancel(cancel_checker)
-            if uid in profile_cache:
-                continue
-            if settings.use_cache and self.cache_store:
-                cached = self.cache_store.get_profile(uid)
-                if cached is not None:
-                    profile_cache[uid] = cached
-                    continue
-            unchecked.append(uid)
+            if uid not in profile_cache:
+                unchecked.append(uid)
+
+        if not unchecked:
+            return
+
+        if settings.use_cache and self.cache_store:
+            cached_profiles = self.cache_store.get_profiles(unchecked)
+            profile_cache.update(cached_profiles)
+            unchecked = [uid for uid in unchecked if uid not in cached_profiles]
 
         if not unchecked:
             return
@@ -68,19 +70,21 @@ class FriendsService:
             batch_size=settings.profile_batch_size,
         )
 
+        profiles_to_save: dict[int, dict[str, Any]] = {}
         for profile in profiles:
             uid = int(profile["id"])
             profile_cache[uid] = profile
-            if settings.use_cache and self.cache_store:
-                self.cache_store.save_profile(uid, profile)
+            profiles_to_save[uid] = profile
 
         returned_ids = {int(profile["id"]) for profile in profiles}
         for uid in unchecked:
             if uid not in returned_ids:
                 profile = {"id": uid, "deactivated": "deleted"}
                 profile_cache[uid] = profile
-                if settings.use_cache and self.cache_store:
-                    self.cache_store.save_profile(uid, profile)
+                profiles_to_save[uid] = profile
+
+        if settings.use_cache and self.cache_store:
+            self.cache_store.save_profiles(profiles_to_save)
 
         self._progress(
             progress_callback,
@@ -149,8 +153,8 @@ class FriendsService:
         if cache_key in friends_cache:
             return friends_cache[cache_key]
 
-        if force and settings.use_cache and self.cache_store:
-            cached = self.cache_store.get_friends(user_id, force)
+        if settings.use_cache and self.cache_store:
+            cached = self.cache_store.get_friends(user_id, force, limit_key)
             if cached is not None:
                 friends_cache[cache_key] = cached
                 return cached
@@ -171,6 +175,9 @@ class FriendsService:
             if settings.exclude_hubs and not force and total > settings.max_friends_per_user:
                 hub_cache.add(user_id)
                 self.hubs_count += 1
+                if settings.use_cache and self.cache_store:
+                    self.cache_store.save_hub(user_id, limit_key, True)
+                    self.cache_store.save_friends(user_id, force, limit_key, [])
                 self._progress(
                     progress_callback,
                     f"[hub] uid={user_id} — {total} друзей, исключён",
@@ -204,8 +211,8 @@ class FriendsService:
                 )
 
             friends_cache[cache_key] = friends
-            if force and settings.use_cache and self.cache_store:
-                self.cache_store.save_friends(user_id, force, friends)
+            if settings.use_cache and self.cache_store:
+                self.cache_store.save_friends(user_id, force, limit_key, friends)
 
             self._progress(
                 progress_callback,
@@ -252,8 +259,8 @@ class FriendsService:
             message = f"код {exc.code}: {exc.message}"
         self._progress(progress_callback, f"[skip] uid={user_id} — {message}")
         friends_cache[cache_key] = []
-        if cache_key[1] and settings.use_cache and self.cache_store:
-            self.cache_store.save_friends(user_id, cache_key[1], [])
+        if settings.use_cache and self.cache_store:
+            self.cache_store.save_friends(user_id, cache_key[1], cache_key[2], [])
 
     def probe_is_hub(
         self,
@@ -264,9 +271,17 @@ class FriendsService:
         cancel_checker=None,
     ) -> bool:
         self._check_cancel(cancel_checker)
+        limit_key = settings.max_friends_per_user
 
         if user_id in hub_cache:
             return True
+
+        if settings.use_cache and self.cache_store:
+            cached = self.cache_store.is_hub(user_id, limit_key)
+            if cached is not None:
+                if cached:
+                    hub_cache.add(user_id)
+                return cached
 
         try:
             response = self.client.friends_get_execute(user_id=user_id, count=1, offset=0)
@@ -282,6 +297,9 @@ class FriendsService:
                     progress_callback,
                     f"[hub] uid={user_id} — {total} друзей, отклонён как точка встречи",
                 )
+
+            if settings.use_cache and self.cache_store:
+                self.cache_store.save_hub(user_id, limit_key, is_hub)
 
             return is_hub
 
