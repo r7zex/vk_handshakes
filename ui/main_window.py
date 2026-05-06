@@ -27,7 +27,7 @@ from storage.token_store import TokenStore
 from ui.workers.search_worker import SearchWorker
 from utils.formatting import format_path, mask_token
 from utils.validation import validate_search_form
-from utils.get_token import get_token_from_site
+from ui.workers.auth_worker import AuthWorker
 from vk.api_client import VkApiClient
 from vk.friends_service import FriendsService
 from vk.token_manager import TokenManager
@@ -270,17 +270,46 @@ class MainWindow(QWidget):
         self.log("auth", "токен удалён")
 
     def on_auto_token(self) -> None:
-        token = get_token_from_site()
+        if self.auth_thread and self.auth_thread.isRunning():
+            return
+
+        self.btn_auto_token.setEnabled(False)
+        self.auth_label.setText("Ожидание авторизации через VK...")
+        self.log("auth", "запущена автоматическая авторизация")
+
+        self.auth_thread = QThread(self)
+        self.auth_worker = AuthWorker()
+        self.auth_worker.moveToThread(self.auth_thread)
+
+        self.auth_thread.started.connect(self.auth_worker.run)
+        self.auth_worker.finished.connect(self.on_auto_token_finished)
+        self.auth_worker.finished.connect(self.auth_thread.quit)
+        self.auth_thread.finished.connect(self.auth_worker.deleteLater)
+        self.auth_thread.finished.connect(self.auth_thread.deleteLater)
+        self.auth_thread.finished.connect(self._clear_auth_thread)
+
+        self.auth_thread.start()
+
+    def on_auto_token_finished(self, success: bool, value: str) -> None:
+        self.btn_auto_token.setEnabled(True)
+
+        if not success:
+            self.auth_label.setText("Не удалось получить токен")
+            self.log("error", value)
+            return
+
+        token = extract_token(value)
+        if not token:
+            self.auth_label.setText("Не удалось извлечь токен")
+            self.log("error", "Полученная строка не похожа на access_token")
+            return
+
         self.manual_provider.set_token(token)
         self.token_manager.save_token(token)
         self.token_input.clear()
         self.btn_start.setEnabled(True)
         self.auth_label.setText(f"Токен сохранён: {mask_token(token)}.")
         self.log("auth", f"токен сохранён: {mask_token(token)}")
-        self.log(
-            "auth",
-            "кнопка автоматической вставки токена добавлена; обработчик авторизации ещё не подключён",
-        )
 
     def on_start(self) -> None:
         if self.search_thread and self.search_thread.isRunning():

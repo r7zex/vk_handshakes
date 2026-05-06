@@ -49,7 +49,8 @@ def get_token_from_site() -> str | None:
 
 
             # Возвращаемся к основной странице сайта и обновляем её уже после авторизации
-            page.reload(wait_until="networkidle")
+            page.reload(wait_until="domcontentloaded")
+            page.locator('textarea[id="followUsersLinks"]').wait_for(timeout=30000)
 
             # Вводим нужное значение в поле
             # ЗАМЕНИ selector и value на свои
