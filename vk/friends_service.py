@@ -134,7 +134,7 @@ class FriendsService:
         settings: SearchSettings,
         force: bool = False,
         hub_cache: set[int] | None = None,
-        friends_cache: dict[tuple[int, bool], list[int]] | None = None,
+        friends_cache: dict[tuple[int, bool, int], list[int]] | None = None,
         profile_cache: dict[int, dict[str, Any]] | None = None,
         progress_callback=None,
         cancel_checker=None,
@@ -143,12 +143,13 @@ class FriendsService:
         hub_cache = hub_cache if hub_cache is not None else set()
         friends_cache = friends_cache if friends_cache is not None else {}
         profile_cache = profile_cache if profile_cache is not None else {}
-        cache_key = (user_id, force)
+        limit_key = 0 if force else settings.max_friends_per_user
+        cache_key = (user_id, force, limit_key)
 
         if cache_key in friends_cache:
             return friends_cache[cache_key]
 
-        if settings.use_cache and self.cache_store:
+        if force and settings.use_cache and self.cache_store:
             cached = self.cache_store.get_friends(user_id, force)
             if cached is not None:
                 friends_cache[cache_key] = cached
@@ -170,8 +171,6 @@ class FriendsService:
             if settings.exclude_hubs and not force and total > settings.max_friends_per_user:
                 hub_cache.add(user_id)
                 self.hubs_count += 1
-                if settings.use_cache and self.cache_store:
-                    self.cache_store.save_hub(user_id, True)
                 self._progress(
                     progress_callback,
                     f"[hub] uid={user_id} — {total} друзей, исключён",
@@ -205,7 +204,7 @@ class FriendsService:
                 )
 
             friends_cache[cache_key] = friends
-            if settings.use_cache and self.cache_store:
+            if force and settings.use_cache and self.cache_store:
                 self.cache_store.save_friends(user_id, force, friends)
 
             self._progress(
@@ -237,8 +236,8 @@ class FriendsService:
         self,
         user_id: int,
         exc: VkApiError,
-        cache_key: tuple[int, bool],
-        friends_cache: dict[tuple[int, bool], list[int]],
+        cache_key: tuple[int, bool, int],
+        friends_cache: dict[tuple[int, bool, int], list[int]],
         settings: SearchSettings,
         progress_callback=None,
     ) -> None:
@@ -253,7 +252,7 @@ class FriendsService:
             message = f"код {exc.code}: {exc.message}"
         self._progress(progress_callback, f"[skip] uid={user_id} — {message}")
         friends_cache[cache_key] = []
-        if settings.use_cache and self.cache_store:
+        if cache_key[1] and settings.use_cache and self.cache_store:
             self.cache_store.save_friends(user_id, cache_key[1], [])
 
     def probe_is_hub(
@@ -269,13 +268,6 @@ class FriendsService:
         if user_id in hub_cache:
             return True
 
-        if settings.use_cache and self.cache_store:
-            cached = self.cache_store.is_hub(user_id)
-            if cached is not None:
-                if cached:
-                    hub_cache.add(user_id)
-                return cached
-
         try:
             response = self.client.friends_get_execute(user_id=user_id, count=1, offset=0)
             if response.get("_execute_failed"):
@@ -290,9 +282,6 @@ class FriendsService:
                     progress_callback,
                     f"[hub] uid={user_id} — {total} друзей, отклонён как точка встречи",
                 )
-
-            if settings.use_cache and self.cache_store:
-                self.cache_store.save_hub(user_id, is_hub)
 
             return is_hub
 
