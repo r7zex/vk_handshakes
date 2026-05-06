@@ -6,19 +6,6 @@ from utils.formatting import format_user_url
 from vk.errors import SearchCancelledError
 
 
-def _format_eta(seconds: float | None) -> str:
-    if seconds is None or seconds < 0:
-        return "--:--"
-
-    total_seconds = int(seconds)
-    minutes, seconds = divmod(total_seconds, 60)
-    hours, minutes = divmod(minutes, 60)
-
-    if hours:
-        return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
-    return f"{minutes:02d}:{seconds:02d}"
-
-
 def bidirectional_bfs(
     client,
     friends_service,
@@ -53,10 +40,24 @@ def bidirectional_bfs(
             elapsed_seconds=time.time() - started,
         )
 
+    def emit_layer_progress(side: str, queue: deque[tuple[int, int]], depth: int) -> None:
+        key = (side, depth)
+        if key not in layer_totals:
+            layer_totals[key] = 1 + sum(1 for _, item_depth in queue if item_depth == depth)
+            layer_processed[key] = 0
+
+        layer_processed[key] += 1
+        emit(
+            f"{side}, рукопожатие {depth}, "
+            f"обработано профилей {layer_processed[key]}/{layer_totals[key]}"
+        )
+
     processed_users = 0
     hub_cache: set[int] = set()
     friends_cache: dict[tuple[int, bool], list[int]] = {}
     profile_cache: dict[int, dict] = {}
+    layer_totals: dict[tuple[str, int], int] = {}
+    layer_processed: dict[tuple[str, int], int] = {}
 
     if start_id == end_id:
         return SearchResult(
@@ -102,12 +103,12 @@ def bidirectional_bfs(
             current_queue = queue_fwd
             current_visited = visited_fwd
             other_visited = visited_bwd
-            direction_number = 1
+            side = "с начала"
         else:
             current_queue = queue_bwd
             current_visited = visited_bwd
             other_visited = visited_fwd
-            direction_number = 2
+            side = "с конца"
 
         user_id, depth = current_queue.popleft()
 
@@ -115,6 +116,8 @@ def bidirectional_bfs(
             continue
 
         processed_users += 1
+        emit_layer_progress(side, current_queue, depth)
+
         is_root = depth == 0
         friends = friends_service.get_friends(
             user_id=user_id,
@@ -128,29 +131,10 @@ def bidirectional_bfs(
         )
 
         if is_root and not friends:
-            emit(
-                f"Профиль {direction_number} (id{user_id}), "
-                "список друзей пуст или недоступен"
-            )
+            emit(f"{side}, рукопожатие {depth}, список друзей пуст или недоступен")
 
-        total_friends = len(friends)
-        progress_step = max(total_friends // 20, 1)
-        profile_started = time.time()
-
-        for index, friend_id in enumerate(friends, start=1):
+        for friend_id in friends:
             check_cancel()
-
-            if index == 1 or index == total_friends or index % progress_step == 0:
-                elapsed = time.time() - profile_started
-                eta = None
-                if index > 0:
-                    eta = elapsed / index * (total_friends - index)
-                emit(
-                    f"Профиль {direction_number} (id{user_id}), "
-                    f"рукопожатие {depth + 1} -> обработано "
-                    f"{index}/{total_friends} друзей, "
-                    f"осталось времени {_format_eta(eta)}"
-                )
 
             if friend_id in blacklist:
                 continue
